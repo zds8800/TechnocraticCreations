@@ -33,7 +33,6 @@
     overflow: hidden;
   }
 
-  /* Scanlines */
   body::before {
     content: '';
     position: fixed;
@@ -43,7 +42,6 @@
     z-index: 10000;
   }
 
-  /* ── Login Overlay ── */
   #login-overlay {
     position: fixed;
     inset: 0;
@@ -153,21 +151,18 @@
     letter-spacing: 1px;
   }
 
-  /* ── Map ── */
   #map {
     position: fixed;
     inset: 0;
     z-index: 1;
   }
 
-  /* Leaflet dark overrides */
   .leaflet-container { background: var(--bg); font-family: 'Rajdhani', sans-serif; }
   .leaflet-popup-content-wrapper { background: var(--bg-panel); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
   .leaflet-popup-tip { background: var(--bg-panel); border: 1px solid var(--border); }
   .leaflet-control-attribution { background: rgba(10,14,20,0.8) !important; color: var(--text-dim) !important; font-size: 9px !important; }
   .leaflet-control-attribution a { color: var(--accent-dim) !important; }
 
-  /* ── Top Bar ── */
   #top-bar {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -234,7 +229,6 @@
     box-shadow: 0 0 8px var(--accent-glow);
   }
 
-  /* ── FAB ── */
   #fab {
     position: fixed;
     bottom: 20px;
@@ -260,7 +254,6 @@
   }
   #fab:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
-  /* ── Bottom Sheet ── */
   #sheet-overlay {
     position: fixed;
     inset: 0;
@@ -334,7 +327,6 @@
   .sheet-btn:hover { border-color: var(--accent); color: var(--accent); }
   .sheet-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 
-  /* ── Add Pin Modal ── */
   #add-modal {
     position: fixed;
     inset: 0;
@@ -452,7 +444,6 @@
     box-shadow: 0 0 12px var(--accent-glow);
   }
 
-  /* ── Pin icons ── */
   .pin-icon {
     width: 32px; height: 32px;
     border-radius: 50%;
@@ -465,12 +456,12 @@
     font-weight: 700;
     color: #fff;
     box-shadow: 0 0 8px rgba(0,0,0,0.5);
-    cursor: pointer;
+    cursor: grab;
     transition: transform 0.15s;
   }
   .pin-icon:hover { transform: scale(1.15); }
+  .pin-icon:active { cursor: grabbing; }
 
-  /* Type colors */
   .pin-location     { background: #008ba3; }
   .pin-person       { background: #ff3860; }
   .pin-event        { background: #ffcc00; color: #000; }
@@ -478,7 +469,6 @@
   .pin-item         { background: #00e676; color: #000; }
   .pin-safehouse    { background: #00e5ff; color: #000; }
 
-  /* ── Toast ── */
   #toast {
     position: fixed;
     top: 60px;
@@ -499,7 +489,6 @@
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  /* ── Desktop sidebar override ── */
   @media (min-width: 900px) {
     #bottom-sheet {
       left: auto;
@@ -525,7 +514,6 @@
 </head>
 <body>
 
-<!-- LOGIN -->
 <div id="login-overlay">
   <div class="login-box">
     <div class="login-logo">◉ Union Intelligence Network</div>
@@ -538,22 +526,17 @@
   </div>
 </div>
 
-<!-- MAP -->
 <div id="map"></div>
 
-<!-- TOP BAR -->
 <div id="top-bar">
   <div class="logo-pill"><span class="dot"></span>OLORIN</div>
   <div class="filters-scroll" id="filters"></div>
 </div>
 
-<!-- FAB -->
 <button id="fab" title="Add intel">+</button>
 
-<!-- TOAST -->
 <div id="toast"></div>
 
-<!-- BOTTOM SHEET (pin detail) -->
 <div id="sheet-overlay"></div>
 <div id="bottom-sheet">
   <div class="sheet-handle"></div>
@@ -562,15 +545,15 @@
   <div class="sheet-body" id="sheet-body">—</div>
   <div class="sheet-actions">
     <button class="sheet-btn" id="sheet-close">CLOSE</button>
+    <button class="sheet-btn" id="sheet-edit" style="border-color:var(--accent-dim);color:var(--accent)">EDIT</button>
     <button class="sheet-btn danger" id="sheet-delete">PURGE</button>
   </div>
 </div>
 
-<!-- ADD PIN MODAL -->
 <div id="add-modal">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>File Report</h3>
+      <h3 id="modal-title">File Report</h3>
       <div class="sub" id="add-coords">LAT: —  LNG: —</div>
     </div>
     <div class="modal-body">
@@ -604,31 +587,22 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// OLORIN CLIENT
+// OLORIN CLIENT — v1.1 (Edit + Drag-to-Move)
 // ═══════════════════════════════════════════════════════════════════
 
 const TYPE_LABELS = {
-  location: 'Location',
-  person: 'Person',
-  event: 'Event',
-  organization: 'Organization',
-  item: 'Item',
-  safehouse: 'Safehouse'
+  location: 'Location', person: 'Person', event: 'Event',
+  organization: 'Organization', item: 'Item', safehouse: 'Safehouse'
 };
 
 const TYPE_ICONS = {
-  location: 'L',
-  person: 'P',
-  event: 'E',
-  organization: 'O',
-  item: 'I',
-  safehouse: 'S'
+  location: 'L', person: 'P', event: 'E',
+  organization: 'O', item: 'I', safehouse: 'S'
 };
 
 let map, pins = [], markers = {}, selectedPin = null;
-let tempLatLng = null;
-let activeFilter = 'ALL';
-let evtSource = null;
+let tempLatLng = null, editingPin = null;
+let activeFilter = 'ALL', evtSource = null;
 
 // ── Auth ───────────────────────────────────────────────────────────
 document.getElementById('login-btn').addEventListener('click', doLogin);
@@ -646,9 +620,7 @@ async function doLogin() {
     });
     if (res.ok) {
       document.getElementById('login-overlay').classList.add('hidden');
-      initMap();
-      loadPins();
-      connectSSE();
+      initMap(); loadPins(); connectSSE();
     } else {
       document.getElementById('login-error').textContent = 'ACCESS DENIED — UNMUTUAL';
     }
@@ -660,30 +632,24 @@ async function doLogin() {
 // ── Map ────────────────────────────────────────────────────────────
 function initMap() {
   map = L.map('map', { zoomControl: false }).setView([41.85, -87.65], 11);
-
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OSM &copy; CARTO',
-    subdomains: 'abcd',
-    maxZoom: 19
+    attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19
   }).addTo(map);
-
   L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-  // Tap to add (not drag)
   map.on('click', (e) => {
     if (document.getElementById('add-modal').classList.contains('show')) return;
     tempLatLng = e.latlng;
+    editingPin = null;
     openAddModal();
   });
 
   buildFilters();
 }
 
-// ── Filters ────────────────────────────────────────────────────────
 function buildFilters() {
   const container = document.getElementById('filters');
-  const types = ['ALL', 'location', 'person', 'event', 'organization', 'item', 'safehouse'];
-  types.forEach(t => {
+  ['ALL','location','person','event','organization','item','safehouse'].forEach(t => {
     const btn = document.createElement('button');
     btn.className = 'filter-chip' + (t === 'ALL' ? ' active' : '');
     btn.textContent = t === 'ALL' ? 'ALL' : TYPE_LABELS[t];
@@ -703,19 +669,15 @@ function setFilter(type) {
 
 // ── Pins ───────────────────────────────────────────────────────────
 async function loadPins() {
-  const res = await fetch('/api/pins');
-  pins = await res.json();
+  pins = await (await fetch('/api/pins')).json();
   renderPins();
 }
 
 function renderPins() {
-  // Clear existing
   Object.values(markers).forEach(m => map.removeLayer(m));
   markers = {};
 
-  const filtered = activeFilter === 'ALL'
-    ? pins
-    : pins.filter(p => p.type === activeFilter);
+  const filtered = activeFilter === 'ALL' ? pins : pins.filter(p => p.type === activeFilter);
 
   filtered.forEach(p => {
     const el = document.createElement('div');
@@ -723,13 +685,24 @@ function renderPins() {
     el.textContent = TYPE_ICONS[p.type];
     el.title = p.name;
 
-    const marker = L.marker([p.lat, p.lng], { icon: L.divIcon({
-      className: '', html: el, iconSize: [32, 32], iconAnchor: [16, 16]
-    })}).addTo(map);
+    const marker = L.marker([p.lat, p.lng], {
+      icon: L.divIcon({ className: '', html: el, iconSize: [32,32], iconAnchor: [16,16] }),
+      draggable: true
+    }).addTo(map);
 
     marker.on('click', (e) => {
       e.originalEvent.stopPropagation();
       showSheet(p);
+    });
+
+    marker.on('dragend', async (e) => {
+      const ll = e.target.getLatLng();
+      await fetch(`/api/pins/${p.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: ll.lat, lng: ll.lng })
+      });
+      toast('PIN RELOCATED');
     });
 
     markers[p.id] = marker;
@@ -742,7 +715,6 @@ function showSheet(pin) {
   document.getElementById('sheet-title').textContent = pin.name;
   document.getElementById('sheet-meta').textContent = `${TYPE_LABELS[pin.type]} // ${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)}`;
   document.getElementById('sheet-body').textContent = pin.notes || '(No field notes on file)';
-
   document.getElementById('sheet-overlay').classList.add('show');
   document.getElementById('bottom-sheet').classList.add('open');
 }
@@ -761,24 +733,41 @@ async function deletePin() {
   toast('INTEL PURGED');
 }
 
+function editPin() {
+  if (!selectedPin) return;
+  editingPin = selectedPin;
+  closeSheet();
+  document.getElementById('modal-title').textContent = 'Update Report';
+  document.getElementById('add-coords').textContent = `ID: ${selectedPin.id}`;
+  document.getElementById('add-name').value = selectedPin.name;
+  document.getElementById('add-notes').value = selectedPin.notes || '';
+  document.getElementById('add-type').value = selectedPin.type;
+  document.getElementById('add-submit').textContent = 'UPDATE REPORT';
+  document.getElementById('add-modal').classList.add('show');
+  document.getElementById('add-name').focus();
+}
+
 document.getElementById('sheet-overlay').addEventListener('click', closeSheet);
 document.getElementById('sheet-close').addEventListener('click', closeSheet);
 document.getElementById('sheet-delete').addEventListener('click', deletePin);
+document.getElementById('sheet-edit').addEventListener('click', editPin);
 
-// ── Add Modal ──────────────────────────────────────────────────────
+// ── Modal ──────────────────────────────────────────────────────────
 function openAddModal() {
-  document.getElementById('add-coords').textContent =
-    `LAT: ${tempLatLng.lat.toFixed(5)}  LNG: ${tempLatLng.lng.toFixed(5)}`;
+  editingPin = null;
+  document.getElementById('modal-title').textContent = 'File Report';
+  document.getElementById('add-coords').textContent = `LAT: ${tempLatLng.lat.toFixed(5)}  LNG: ${tempLatLng.lng.toFixed(5)}`;
   document.getElementById('add-name').value = '';
   document.getElementById('add-notes').value = '';
   document.getElementById('add-type').value = 'location';
+  document.getElementById('add-submit').textContent = 'FILE REPORT';
   document.getElementById('add-modal').classList.add('show');
   document.getElementById('add-name').focus();
 }
 
 function closeAddModal() {
   document.getElementById('add-modal').classList.remove('show');
-  tempLatLng = null;
+  tempLatLng = null; editingPin = null;
 }
 
 async function submitPin() {
@@ -787,28 +776,28 @@ async function submitPin() {
   const type = document.getElementById('add-type').value;
 
   if (!name) { toast('DESIGNATION REQUIRED'); return; }
-  if (!tempLatLng) { toast('COORDINATES LOST'); return; }
 
-  const pin = {
-    lat: tempLatLng.lat,
-    lng: tempLatLng.lng,
-    type,
-    name,
-    notes
-  };
-
-  await fetch('/api/pins', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(pin)
-  });
-
-  closeAddModal();
-  toast('INTEL FILED');
+  if (editingPin) {
+    await fetch(`/api/pins/${editingPin.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, type, notes })
+    });
+    closeAddModal();
+    toast('INTEL UPDATED');
+  } else {
+    if (!tempLatLng) { toast('COORDINATES LOST'); return; }
+    await fetch('/api/pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: tempLatLng.lat, lng: tempLatLng.lng, type, name, notes })
+    });
+    closeAddModal();
+    toast('INTEL FILED');
+  }
 }
 
 document.getElementById('fab').addEventListener('click', () => {
-  // Center map on Chicago if lost
   map.setView([41.85, -87.65], 11);
   toast('TAP MAP TO DROP PIN');
 });
@@ -825,19 +814,20 @@ function connectSSE() {
     const data = JSON.parse(e.data);
     if (data.type === 'pin-added') {
       pins.push(data.pin);
-      if (activeFilter === 'ALL' || activeFilter === data.pin.type) {
-        renderPins();
-      }
+      if (activeFilter === 'ALL' || activeFilter === data.pin.type) renderPins();
       toast(`NEW INTEL: ${data.pin.name}`);
     } else if (data.type === 'pin-deleted') {
       pins = pins.filter(p => p.id !== data.id);
       renderPins();
+    } else if (data.type === 'pin-updated') {
+      const idx = pins.findIndex(p => p.id === data.pin.id);
+      if (idx !== -1) pins[idx] = data.pin;
+      renderPins();
+      if (selectedPin && selectedPin.id === data.pin.id) showSheet(data.pin);
+      toast('INTEL UPDATED');
     }
   };
-  evtSource.onerror = () => {
-    console.log('SSE dropped — reconnecting...');
-    setTimeout(connectSSE, 3000);
-  };
+  evtSource.onerror = () => { setTimeout(connectSSE, 3000); };
 }
 
 // ── Toast ──────────────────────────────────────────────────────────
