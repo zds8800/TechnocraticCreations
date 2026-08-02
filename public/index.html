@@ -736,6 +736,19 @@ async function deletePin() {
 function editPin() {
   if (!selectedPin) return;
   editingPin = selectedPin;
+  const pin = editingPin; // save reference before closeSheet nulls selectedPin
+  closeSheet();
+  document.getElementById('modal-title').textContent = 'Update Report';
+  document.getElementById('add-coords').textContent = `ID: ${pin.id}`;
+  document.getElementById('add-name').value = pin.name;
+  document.getElementById('add-notes').value = pin.notes || '';
+  document.getElementById('add-type').value = pin.type;
+  document.getElementById('add-submit').textContent = 'UPDATE REPORT';
+  document.getElementById('add-modal').classList.add('show');
+  document.getElementById('add-name').focus();
+}
+  if (!selectedPin) return;
+  editingPin = selectedPin;
   closeSheet();
   document.getElementById('modal-title').textContent = 'Update Report';
   document.getElementById('add-coords').textContent = `ID: ${selectedPin.id}`;
