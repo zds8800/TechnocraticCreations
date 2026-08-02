@@ -98,6 +98,16 @@ app.delete('/api/pins/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+app.put('/api/pins/:id', async (req, res) => {
+  db = await loadDB();
+  const idx = db.pins.findIndex((p) => p.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Intel not found' });
+  db.pins[idx] = { ...db.pins[idx], ...req.body, updated_at: new Date().toISOString() };
+  await saveDB(db);
+  broadcast({ type: 'pin-updated', pin: db.pins[idx] });
+  res.json(db.pins[idx]);
+});
+
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -115,7 +125,7 @@ app.get('/api/events', (req, res) => {
 // ── Start ───────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`◉ OLORIN v1.0 — Union Intelligence Grid`);
+  console.log(`◉ OLORIN v1.1 — Union Intelligence Grid`);
   console.log(`  Chicago Sector online at http://localhost:${PORT}`);
   console.log(`  Pins loaded: ${db.pins.length}`);
 });
