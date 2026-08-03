@@ -608,7 +608,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// OLORIN CLIENT — v1.2 (Edit + Drag-to-Move + Export)
+// OLORIN CLIENT — v1.2 (Edit + Drag-to-Move + Export + Clean Attribution)
 // ═══════════════════════════════════════════════════════════════════
 
 const TYPE_LABELS = {
@@ -654,27 +654,6 @@ async function doLogin() {
 function initMap() {
   map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.85, -87.65], 11);
   L.control.attribution({ prefix: '' }).addTo(map);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19
-  }).addTo(map);
-  L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
-  map.on('click', (e) => {
-    if (document.getElementById('add-modal').classList.contains('show')) return;
-    tempLatLng = e.latlng;
-    editingPin = null;
-    openAddModal();
-  });
-
-  buildFilters();
-}
-  map = L.map('map', { zoomControl: false, attributionControl: false }).setView([41.85, -87.65], 11);
-  L.control.attribution({ prefix: '' }).addTo(map);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19
-  }).addTo(map);
-  L.control.zoom({ position: 'bottomleft' }).addTo(map);
-  map = L.map('map', { zoomControl: false }).setView([41.85, -87.65], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19
   }).addTo(map);
