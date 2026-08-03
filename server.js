@@ -1,4 +1,5 @@
 import express from 'express';
+import { MongoClient } from 'mongodb';
 import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import bcrypt from 'bcryptjs';
@@ -10,46 +11,128 @@ app.use(express.static('public'));
 // ── Config ──────────────────────────────────────────────────────────
 const PASSWORD = process.env.OLORIN_PASSWORD || 'TIsfL2000';
 const PASSWORD_HASH = bcrypt.hashSync(PASSWORD, 10);
-const DB_FILE = 'db.json';
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// ── DB helpers ──────────────────────────────────────────────────────
-async function loadDB() {
-  if (!existsSync(DB_FILE)) return { pins: [] };
-  try {
-    return JSON.parse(await readFile(DB_FILE, 'utf8'));
-  } catch {
-    return { pins: [] };
+// ── Database Adapter ────────────────────────────────────────────────
+let useMongo = false;
+let mongoCollection = null;
+const FILE_DB = 'db.json';
+
+async function initDB() {
+  if (MONGODB_URI) {
+    try {
+      const client = new MongoClient(MONGODB_URI);
+      await client.connect();
+      mongoCollection = client.db('olorin').collection('pins');
+
+      // Seed if empty
+      const count = await mongoCollection.countDocuments();
+      if (count === 0) {
+        await mongoCollection.insertMany([
+          {
+            _id: 'seed-001', id: 'seed-001',
+            lat: 41.7915, lng: -87.5998, type: 'safehouse',
+            name: 'Polsky Center — Field Office',
+            notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
+            created_at: new Date().toISOString()
+          },
+          {
+            _id: 'seed-002', id: 'seed-002',
+            lat: 41.8827, lng: -87.6233, type: 'location',
+            name: 'Cloud Gate — Control Uplink',
+            notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
+            created_at: new Date().toISOString()
+          }
+        ]);
+      }
+      useMongo = true;
+      console.log('✓ MongoDB connected — data will persist across deploys');
+      return;
+    } catch (err) {
+      console.error('MongoDB connection failed:', err.message);
+      console.log('Falling back to file-based storage');
+    }
+  }
+
+  // File-based fallback (local dev only — ephemeral on Render)
+  console.log('⚠️  Using file-based storage — DATA WILL NOT PERSIST across deploys');
+  console.log('   Set MONGODB_URI environment variable for persistent storage');
+
+  if (!existsSync(FILE_DB)) {
+    await writeFile(FILE_DB, JSON.stringify({
+      pins: [
+        {
+          id: 'seed-001',
+          lat: 41.7915, lng: -87.5998, type: 'safehouse',
+          name: 'Polsky Center — Field Office',
+          notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 'seed-002',
+          lat: 41.8827, lng: -87.6233, type: 'location',
+          name: 'Cloud Gate — Control Uplink',
+          notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
+          created_at: new Date().toISOString()
+        }
+      ]
+    }, null, 2));
   }
 }
 
-async function saveDB(data) {
-  await writeFile(DB_FILE, JSON.stringify(data, null, 2));
+async function loadPins() {
+  if (useMongo) {
+    const docs = await mongoCollection.find({}).toArray();
+    return docs.map(d => {
+      const { _id, ...rest } = d;
+      return { id: _id, ...rest };
+    });
+  }
+  try {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    return data.pins || [];
+  } catch {
+    return [];
+  }
 }
 
-// Seed data if empty
-let db = await loadDB();
-if (!db.pins || db.pins.length === 0) {
-  db.pins = [
-    {
-      id: 'seed-001',
-      lat: 41.7915,
-      lng: -87.5998,
-      type: 'safehouse',
-      name: 'Polsky Center — Field Office',
-      notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'seed-002',
-      lat: 41.8827,
-      lng: -87.6233,
-      type: 'location',
-      name: 'Cloud Gate — Control Uplink',
-      notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
-      created_at: new Date().toISOString()
-    }
-  ];
-  await saveDB(db);
+async function savePin(pin) {
+  if (useMongo) {
+    await mongoCollection.insertOne({ _id: pin.id, ...pin });
+  } else {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    data.pins.push(pin);
+    await writeFile(FILE_DB, JSON.stringify(data, null, 2));
+  }
+}
+
+async function updatePin(id, updates) {
+  if (useMongo) {
+    await mongoCollection.updateOne(
+      { _id: id },
+      { $set: { ...updates, updated_at: new Date().toISOString() } }
+    );
+    const doc = await mongoCollection.findOne({ _id: id });
+    if (!doc) return null;
+    const { _id, ...rest } = doc;
+    return { id: _id, ...rest };
+  }
+  const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+  const idx = data.pins.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  data.pins[idx] = { ...data.pins[idx], ...updates, updated_at: new Date().toISOString() };
+  await writeFile(FILE_DB, JSON.stringify(data, null, 2));
+  return data.pins[idx];
+}
+
+async function deletePin(id) {
+  if (useMongo) {
+    await mongoCollection.deleteOne({ _id: id });
+  } else {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    data.pins = data.pins.filter(p => p.id !== id);
+    await writeFile(FILE_DB, JSON.stringify(data, null, 2));
+  }
 }
 
 // ── SSE clients ─────────────────────────────────────────────────────
@@ -57,7 +140,7 @@ const clients = [];
 
 function broadcast(data) {
   const payload = `data: ${JSON.stringify(data)}\n\n`;
-  clients.forEach((res) => {
+  clients.forEach(res => {
     try { res.write(payload); } catch { /* client disconnected */ }
   });
 }
@@ -73,39 +156,32 @@ app.post('/api/login', (req, res) => {
 });
 
 app.get('/api/pins', async (req, res) => {
-  db = await loadDB();
-  res.json(db.pins);
+  const pins = await loadPins();
+  res.json(pins);
 });
 
 app.post('/api/pins', async (req, res) => {
-  db = await loadDB();
   const pin = {
     id: `pin-${Date.now()}`,
     ...req.body,
     created_at: new Date().toISOString()
   };
-  db.pins.push(pin);
-  await saveDB(db);
+  await savePin(pin);
   broadcast({ type: 'pin-added', pin });
   res.json(pin);
 });
 
 app.delete('/api/pins/:id', async (req, res) => {
-  db = await loadDB();
-  db.pins = db.pins.filter((p) => p.id !== req.params.id);
-  await saveDB(db);
+  await deletePin(req.params.id);
   broadcast({ type: 'pin-deleted', id: req.params.id });
   res.json({ ok: true });
 });
 
 app.put('/api/pins/:id', async (req, res) => {
-  db = await loadDB();
-  const idx = db.pins.findIndex((p) => p.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Intel not found' });
-  db.pins[idx] = { ...db.pins[idx], ...req.body, updated_at: new Date().toISOString() };
-  await saveDB(db);
-  broadcast({ type: 'pin-updated', pin: db.pins[idx] });
-  res.json(db.pins[idx]);
+  const updated = await updatePin(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Intel not found' });
+  broadcast({ type: 'pin-updated', pin: updated });
+  res.json(updated);
 });
 
 app.get('/api/events', (req, res) => {
@@ -123,9 +199,10 @@ app.get('/api/events', (req, res) => {
 });
 
 // ── Start ───────────────────────────────────────────────────────────
+await initDB();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`◉ OLORIN v1.1 — Union Intelligence Grid`);
+  console.log(`◉ OLORIN v1.2 — Union Intelligence Grid`);
+  console.log(`  Storage: ${useMongo ? 'MongoDB (persistent)' : 'FILE (ephemeral — will not survive deploys)'}`);
   console.log(`  Chicago Sector online at http://localhost:${PORT}`);
-  console.log(`  Pins loaded: ${db.pins.length}`);
 });

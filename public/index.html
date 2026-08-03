@@ -254,6 +254,26 @@
   }
   #fab:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+  .export-btn {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--accent-dim);
+    padding: 5px 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    border-radius: 3px;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .export-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+
   #sheet-overlay {
     position: fixed;
     inset: 0;
@@ -531,6 +551,7 @@
 <div id="top-bar">
   <div class="logo-pill"><span class="dot"></span>OLORIN</div>
   <div class="filters-scroll" id="filters"></div>
+  <button class="export-btn" id="export-btn" title="Download intel backup">⬇ BACKUP</button>
 </div>
 
 <button id="fab" title="Add intel">+</button>
@@ -587,7 +608,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// OLORIN CLIENT — v1.1 (Edit + Drag-to-Move)
+// OLORIN CLIENT — v1.2 (Edit + Drag-to-Move + Export)
 // ═══════════════════════════════════════════════════════════════════
 
 const TYPE_LABELS = {
@@ -752,6 +773,19 @@ document.getElementById('sheet-overlay').addEventListener('click', closeSheet);
 document.getElementById('sheet-close').addEventListener('click', closeSheet);
 document.getElementById('sheet-delete').addEventListener('click', deletePin);
 document.getElementById('sheet-edit').addEventListener('click', editPin);
+
+// ── Export ─────────────────────────────────────────────────────────
+document.getElementById('export-btn').addEventListener('click', async () => {
+  const data = await (await fetch('/api/pins')).json();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `olorin-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('INTEL BACKUP DOWNLOADED');
+});
 
 // ── Modal ──────────────────────────────────────────────────────────
 function openAddModal() {
