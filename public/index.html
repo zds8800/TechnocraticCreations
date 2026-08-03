@@ -327,27 +327,72 @@
     margin-bottom: 16px;
     white-space: pre-wrap;
   }
+
+  .sheet-links {
+    margin-bottom: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .sheet-links h4 {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--accent-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .link-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .link-row:hover { color: var(--accent); }
+  .link-row .rel-badge {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--accent-dim);
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .link-row .unlink-btn {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--danger);
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .link-row .unlink-btn:hover { opacity: 1; }
+
   .sheet-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
   }
-  .sheet-btn {
+  .sheet-actions .sheet-btn {
     flex: 1;
+    min-width: 70px;
     background: transparent;
     border: 1px solid var(--border);
     color: var(--text);
     padding: 10px;
     font-family: 'Share Tech Mono', monospace;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 1px;
     cursor: pointer;
     border-radius: 3px;
   }
-  .sheet-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .sheet-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .sheet-actions .sheet-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .sheet-actions .sheet-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 
-  #add-modal {
+  #add-modal, #link-modal {
     position: fixed;
     inset: 0;
     z-index: 3000;
@@ -358,7 +403,7 @@
     background: rgba(10,14,20,0.85);
     backdrop-filter: blur(4px);
   }
-  #add-modal.show { display: flex; }
+  #add-modal.show, #link-modal.show { display: flex; }
 
   .modal-box {
     background: var(--bg-panel);
@@ -564,8 +609,13 @@
   <div class="sheet-title" id="sheet-title">—</div>
   <div class="sheet-meta" id="sheet-meta">—</div>
   <div class="sheet-body" id="sheet-body">—</div>
+  <div class="sheet-links" id="sheet-links">
+    <h4>Linked Intel</h4>
+    <div id="sheet-links-list"></div>
+  </div>
   <div class="sheet-actions">
     <button class="sheet-btn" id="sheet-close">CLOSE</button>
+    <button class="sheet-btn" id="sheet-link" style="border-color:var(--accent-dim);color:var(--accent)">LINK</button>
     <button class="sheet-btn" id="sheet-edit" style="border-color:var(--accent-dim);color:var(--accent)">EDIT</button>
     <button class="sheet-btn danger" id="sheet-delete">PURGE</button>
   </div>
@@ -605,10 +655,40 @@
   </div>
 </div>
 
+<div id="link-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Establish Connection</h3>
+      <div class="sub" id="link-from">FROM: —</div>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Target Intel</label>
+        <select id="link-target"></select>
+      </div>
+      <div class="field">
+        <label>Relationship Type</label>
+        <select id="link-rel">
+          <option value="member_of">Member Of</option>
+          <option value="involved_in">Involved In</option>
+          <option value="located_at">Located At</option>
+          <option value="witnessed_at">Witnessed At</option>
+          <option value="enemy_of">Enemy Of</option>
+          <option value="related_to">Related To</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="link-cancel">ABORT</button>
+      <button class="primary" id="link-submit">ESTABLISH LINK</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// OLORIN CLIENT — v1.2 (Edit + Drag-to-Move + Export + Clean Attribution)
+// OLORIN CLIENT — v2.0 (Edit + Drag-to-Move + Export + Links)
 // ═══════════════════════════════════════════════════════════════════
 
 const TYPE_LABELS = {
@@ -621,7 +701,17 @@ const TYPE_ICONS = {
   organization: 'O', item: 'I', safehouse: 'S'
 };
 
+const REL_LABELS = {
+  member_of: 'Member Of',
+  involved_in: 'Involved In',
+  located_at: 'Located At',
+  witnessed_at: 'Witnessed At',
+  enemy_of: 'Enemy Of',
+  related_to: 'Related To'
+};
+
 let map, pins = [], markers = {}, selectedPin = null;
+let links = [], linkPolylines = {}, linkingFrom = null;
 let tempLatLng = null, editingPin = null;
 let activeFilter = 'ALL', evtSource = null;
 
@@ -641,7 +731,7 @@ async function doLogin() {
     });
     if (res.ok) {
       document.getElementById('login-overlay').classList.add('hidden');
-      initMap(); loadPins(); connectSSE();
+      initMap(); loadPins(); loadLinks(); connectSSE();
     } else {
       document.getElementById('login-error').textContent = 'ACCESS DENIED — UNMUTUAL';
     }
@@ -661,6 +751,7 @@ function initMap() {
 
   map.on('click', (e) => {
     if (document.getElementById('add-modal').classList.contains('show')) return;
+    if (document.getElementById('link-modal').classList.contains('show')) return;
     tempLatLng = e.latlng;
     editingPin = null;
     openAddModal();
@@ -687,6 +778,7 @@ function setFilter(type) {
     b.classList.toggle('active', b.dataset.type === type);
   });
   renderPins();
+  renderLinks();
 }
 
 // ── Pins ───────────────────────────────────────────────────────────
@@ -725,9 +817,35 @@ function renderPins() {
         body: JSON.stringify({ lat: ll.lat, lng: ll.lng })
       });
       toast('PIN RELOCATED');
+      renderLinks();
     });
 
     markers[p.id] = marker;
+  });
+}
+
+// ── Links ──────────────────────────────────────────────────────────
+async function loadLinks() {
+  links = await (await fetch('/api/links')).json();
+  renderLinks();
+}
+
+function renderLinks() {
+  Object.values(linkPolylines).forEach(p => map.removeLayer(p));
+  linkPolylines = {};
+
+  links.forEach(l => {
+    const source = pins.find(p => p.id === l.sourceId);
+    const target = pins.find(p => p.id === l.targetId);
+    if (!source || !target) return;
+    if (activeFilter !== 'ALL' && source.type !== activeFilter && target.type !== activeFilter) return;
+
+    const polyline = L.polyline(
+      [[source.lat, source.lng], [target.lat, target.lng]],
+      { color: '#008ba3', weight: 2, opacity: 0.5, dashArray: '5, 5' }
+    ).addTo(map);
+
+    linkPolylines[l.id] = polyline;
   });
 }
 
@@ -737,6 +855,7 @@ function showSheet(pin) {
   document.getElementById('sheet-title').textContent = pin.name;
   document.getElementById('sheet-meta').textContent = `${TYPE_LABELS[pin.type]} // ${pin.lat.toFixed(4)}, ${pin.lng.toFixed(4)}`;
   document.getElementById('sheet-body').textContent = pin.notes || '(No field notes on file)';
+  renderSheetLinks(pin);
   document.getElementById('sheet-overlay').classList.add('show');
   document.getElementById('bottom-sheet').classList.add('open');
 }
@@ -745,6 +864,41 @@ function closeSheet() {
   document.getElementById('sheet-overlay').classList.remove('show');
   document.getElementById('bottom-sheet').classList.remove('open');
   selectedPin = null;
+}
+
+function renderSheetLinks(pin) {
+  const container = document.getElementById('sheet-links-list');
+  container.innerHTML = '';
+
+  const pinLinks = links.filter(l => l.sourceId === pin.id || l.targetId === pin.id);
+  if (pinLinks.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:0.8rem;">No established connections.</div>';
+    return;
+  }
+
+  pinLinks.forEach(l => {
+    const isSource = l.sourceId === pin.id;
+    const otherId = isSource ? l.targetId : l.sourceId;
+    const other = pins.find(p => p.id === otherId);
+    if (!other) return;
+
+    const row = document.createElement('div');
+    row.className = 'link-row';
+    row.innerHTML = `
+      <span class="rel-badge">${l.label || REL_LABELS[l.rel] || l.rel}</span>
+      <span>${other.name}</span>
+      <span class="unlink-btn" data-link-id="${l.id}">✕</span>
+    `;
+    row.querySelector('.unlink-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteLink(l.id);
+    });
+    row.addEventListener('click', () => {
+      closeSheet();
+      showSheet(other);
+    });
+    container.appendChild(row);
+  });
 }
 
 async function deletePin() {
@@ -770,10 +924,59 @@ function editPin() {
   document.getElementById('add-name').focus();
 }
 
+function showLinkModal() {
+  if (!selectedPin) return;
+  const pin = selectedPin;
+  linkingFrom = pin;
+  closeSheet();
+
+  document.getElementById('link-from').textContent = `FROM: ${pin.name}`;
+
+  const targetSelect = document.getElementById('link-target');
+  targetSelect.innerHTML = '';
+  pins.filter(p => p.id !== pin.id).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.name} (${TYPE_LABELS[p.type]})`;
+    targetSelect.appendChild(opt);
+  });
+
+  document.getElementById('link-modal').classList.add('show');
+}
+
+function closeLinkModal() {
+  document.getElementById('link-modal').classList.remove('show');
+  linkingFrom = null;
+}
+
+async function submitLink() {
+  if (!linkingFrom) return;
+  const targetId = document.getElementById('link-target').value;
+  const rel = document.getElementById('link-rel').value;
+
+  if (!targetId) { toast('TARGET REQUIRED'); return; }
+
+  await fetch('/api/links', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceId: linkingFrom.id, targetId, rel, label: REL_LABELS[rel] })
+  });
+
+  closeLinkModal();
+  toast('LINK ESTABLISHED');
+}
+
+async function deleteLink(linkId) {
+  if (!confirm('Sever this connection?')) return;
+  await fetch(`/api/links/${linkId}`, { method: 'DELETE' });
+  toast('LINK SEVERED');
+}
+
 document.getElementById('sheet-overlay').addEventListener('click', closeSheet);
 document.getElementById('sheet-close').addEventListener('click', closeSheet);
 document.getElementById('sheet-delete').addEventListener('click', deletePin);
 document.getElementById('sheet-edit').addEventListener('click', editPin);
+document.getElementById('sheet-link').addEventListener('click', showLinkModal);
 
 // ── Export ─────────────────────────────────────────────────────────
 document.getElementById('export-btn').addEventListener('click', async () => {
@@ -843,6 +1046,13 @@ document.getElementById('add-modal').addEventListener('click', (e) => {
   if (e.target.id === 'add-modal') closeAddModal();
 });
 
+// Link modal events
+document.getElementById('link-cancel').addEventListener('click', closeLinkModal);
+document.getElementById('link-submit').addEventListener('click', submitLink);
+document.getElementById('link-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'link-modal') closeLinkModal();
+});
+
 // ── SSE ────────────────────────────────────────────────────────────
 function connectSSE() {
   evtSource = new EventSource('/api/events');
@@ -855,12 +1065,25 @@ function connectSSE() {
     } else if (data.type === 'pin-deleted') {
       pins = pins.filter(p => p.id !== data.id);
       renderPins();
+      renderLinks();
+      if (selectedPin && selectedPin.id === data.id) closeSheet();
     } else if (data.type === 'pin-updated') {
       const idx = pins.findIndex(p => p.id === data.pin.id);
       if (idx !== -1) pins[idx] = data.pin;
       renderPins();
+      renderLinks();
       if (selectedPin && selectedPin.id === data.pin.id) showSheet(data.pin);
       toast('INTEL UPDATED');
+    } else if (data.type === 'link-added') {
+      links.push(data.link);
+      renderLinks();
+      if (selectedPin) renderSheetLinks(selectedPin);
+      toast('LINK ESTABLISHED');
+    } else if (data.type === 'link-deleted') {
+      links = links.filter(l => l.id !== data.id);
+      renderLinks();
+      if (selectedPin) renderSheetLinks(selectedPin);
+      toast('LINK SEVERED');
     }
   };
   evtSource.onerror = () => { setTimeout(connectSSE, 3000); };
