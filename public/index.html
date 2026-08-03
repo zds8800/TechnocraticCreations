@@ -926,14 +926,15 @@ function editPin() {
 
 function showLinkModal() {
   if (!selectedPin) return;
-  linkingFrom = selectedPin;
+  const pin = selectedPin;
+  linkingFrom = pin;
   closeSheet();
 
-  document.getElementById('link-from').textContent = `FROM: ${selectedPin.name}`;
+  document.getElementById('link-from').textContent = `FROM: ${pin.name}`;
 
   const targetSelect = document.getElementById('link-target');
   targetSelect.innerHTML = '';
-  pins.filter(p => p.id !== selectedPin.id).forEach(p => {
+  pins.filter(p => p.id !== pin.id).forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id;
     opt.textContent = `${p.name} (${TYPE_LABELS[p.type]})`;
