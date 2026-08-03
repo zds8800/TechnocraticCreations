@@ -16,7 +16,25 @@ const MONGODB_URI = process.env.MONGODB_URI;
 // ── Database Adapter ────────────────────────────────────────────────
 let useMongo = false;
 let mongoCollection = null;
+let mongoLinksCollection = null;
 const FILE_DB = 'db.json';
+
+const SEED_PINS = [
+  {
+    id: 'seed-001',
+    lat: 41.7915, lng: -87.5998, type: 'safehouse',
+    name: 'Polsky Center — Field Office',
+    notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'seed-002',
+    lat: 41.8827, lng: -87.6233, type: 'location',
+    name: 'Cloud Gate — Control Uplink',
+    notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
+    created_at: new Date().toISOString()
+  }
+];
 
 async function initDB() {
   if (MONGODB_URI) {
@@ -24,26 +42,14 @@ async function initDB() {
       const client = new MongoClient(MONGODB_URI);
       await client.connect();
       mongoCollection = client.db('olorin').collection('pins');
+      mongoLinksCollection = client.db('olorin').collection('links');
 
-      // Seed if empty
+      // Seed pins if empty
       const count = await mongoCollection.countDocuments();
       if (count === 0) {
-        await mongoCollection.insertMany([
-          {
-            _id: 'seed-001', id: 'seed-001',
-            lat: 41.7915, lng: -87.5998, type: 'safehouse',
-            name: 'Polsky Center — Field Office',
-            notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
-            created_at: new Date().toISOString()
-          },
-          {
-            _id: 'seed-002', id: 'seed-002',
-            lat: 41.8827, lng: -87.6233, type: 'location',
-            name: 'Cloud Gate — Control Uplink',
-            notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
-            created_at: new Date().toISOString()
-          }
-        ]);
+        await mongoCollection.insertMany(
+          SEED_PINS.map(p => ({ _id: p.id, ...p }))
+        );
       }
       useMongo = true;
       console.log('✓ MongoDB connected — data will persist across deploys');
@@ -54,32 +60,15 @@ async function initDB() {
     }
   }
 
-  // File-based fallback (local dev only — ephemeral on Render)
   console.log('⚠️  Using file-based storage — DATA WILL NOT PERSIST across deploys');
   console.log('   Set MONGODB_URI environment variable for persistent storage');
 
   if (!existsSync(FILE_DB)) {
-    await writeFile(FILE_DB, JSON.stringify({
-      pins: [
-        {
-          id: 'seed-001',
-          lat: 41.7915, lng: -87.5998, type: 'safehouse',
-          name: 'Polsky Center — Field Office',
-          notes: 'Operative home base. Hyde Park front. Access via University of Chicago Polsky Center for Entrepreneurship. Low-profile, high-speed fiber. Do not discuss Union business in the café.',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 'seed-002',
-          lat: 41.8827, lng: -87.6233, type: 'location',
-          name: 'Cloud Gate — Control Uplink',
-          notes: 'Public teleportation nexus to Central Control. Approach the Bean at 03:00 local when crowd density is minimal. Stand on the northeast reflection point. Do NOT use during Lollapalooza.',
-          created_at: new Date().toISOString()
-        }
-      ]
-    }, null, 2));
+    await writeFile(FILE_DB, JSON.stringify({ pins: SEED_PINS, links: [] }, null, 2));
   }
 }
 
+// ── Pin helpers ─────────────────────────────────────────────────────
 async function loadPins() {
   if (useMongo) {
     const docs = await mongoCollection.find({}).toArray();
@@ -91,9 +80,7 @@ async function loadPins() {
   try {
     const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
     return data.pins || [];
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 async function savePin(pin) {
@@ -128,9 +115,46 @@ async function updatePin(id, updates) {
 async function deletePin(id) {
   if (useMongo) {
     await mongoCollection.deleteOne({ _id: id });
+    await mongoLinksCollection.deleteMany({ $or: [{ sourceId: id }, { targetId: id }] });
   } else {
     const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
     data.pins = data.pins.filter(p => p.id !== id);
+    data.links = data.links.filter(l => l.sourceId !== id && l.targetId !== id);
+    await writeFile(FILE_DB, JSON.stringify(data, null, 2));
+  }
+}
+
+// ── Link helpers ────────────────────────────────────────────────────
+async function loadLinks() {
+  if (useMongo) {
+    const docs = await mongoLinksCollection.find({}).toArray();
+    return docs.map(d => {
+      const { _id, ...rest } = d;
+      return { id: _id, ...rest };
+    });
+  }
+  try {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    return data.links || [];
+  } catch { return []; }
+}
+
+async function saveLink(link) {
+  if (useMongo) {
+    await mongoLinksCollection.insertOne({ _id: link.id, ...link });
+  } else {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    data.links.push(link);
+    await writeFile(FILE_DB, JSON.stringify(data, null, 2));
+  }
+}
+
+async function deleteLink(id) {
+  if (useMongo) {
+    await mongoLinksCollection.deleteOne({ _id: id });
+  } else {
+    const data = JSON.parse(await readFile(FILE_DB, 'utf8'));
+    data.links = data.links.filter(l => l.id !== id);
     await writeFile(FILE_DB, JSON.stringify(data, null, 2));
   }
 }
@@ -155,6 +179,7 @@ app.post('/api/login', (req, res) => {
   }
 });
 
+// ── Pin routes ──────────────────────────────────────────────────────
 app.get('/api/pins', async (req, res) => {
   const pins = await loadPins();
   res.json(pins);
@@ -184,6 +209,30 @@ app.put('/api/pins/:id', async (req, res) => {
   res.json(updated);
 });
 
+// ── Link routes ─────────────────────────────────────────────────────
+app.get('/api/links', async (req, res) => {
+  const links = await loadLinks();
+  res.json(links);
+});
+
+app.post('/api/links', async (req, res) => {
+  const link = {
+    id: `link-${Date.now()}`,
+    ...req.body,
+    created_at: new Date().toISOString()
+  };
+  await saveLink(link);
+  broadcast({ type: 'link-added', link });
+  res.json(link);
+});
+
+app.delete('/api/links/:id', async (req, res) => {
+  await deleteLink(req.params.id);
+  broadcast({ type: 'link-deleted', id: req.params.id });
+  res.json({ ok: true });
+});
+
+// ── SSE ─────────────────────────────────────────────────────────────
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -202,7 +251,7 @@ app.get('/api/events', (req, res) => {
 await initDB();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`◉ OLORIN v1.2 — Union Intelligence Grid`);
-  console.log(`  Storage: ${useMongo ? 'MongoDB (persistent)' : 'FILE (ephemeral — will not survive deploys)'}`);
+  console.log(`◉ OLORIN v2.0 — Union Intelligence Grid`);
+  console.log(`  Storage: ${useMongo ? 'MongoDB (persistent)' : 'FILE (ephemeral)'}`);
   console.log(`  Chicago Sector online at http://localhost:${PORT}`);
 });
